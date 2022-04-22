@@ -1,4 +1,5 @@
 import json
+import pandas as pd
 from admin import KakaoAdmin
 from api import get_kakao_key
 
@@ -17,18 +18,21 @@ def main():
     admin = KakaoAdmin('minyeamer','abcd@likelion.org',kakao_api_key,local_info)
 
     # 스크래핑이 필요한 경우 (디버그 시 size 파라미터를 통해 요청할 데이터 수 설정)
-    admin.set_service_data()
+    admin.set_service_data(size=10)
 
     # 스크래핑한 데이터가 있을 경우
     with open('service_data.json','r', encoding='UTF-8') as f:
         service_data = json.load(f)
-    admin.set_service_data(service_data)
+    service_df = pd.read_csv('service_data.csv')
+    admin.set_service_data(service_data, service_df)
 
     # 검색 요청이 있으면
     if True:
-        keyword = input('검색어를 입력해주세요. ')
+        keywords = input('검색어를 입력해주세요. ').split()
+        target = int(input('검색 대상을 선택해주세요. '))
+        display = int(input('보고 싶은 맛집 개수를 입력해주세요. '))
         # location = (x, y) # 위치 기반 검색은 서비스 지역 확대 시 구현
-        result = admin.advanced_search(keyword)
+        result = admin.advanced_search(keywords, target=target, display=display, exact=True)
         print(result)
 
 

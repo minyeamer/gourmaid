@@ -3,8 +3,9 @@ import pandas as pd
 import json
 import requests
 import time
+import re
 from webdriver_manager.chrome import ChromeDriverManager 
-from selenium.webdriver.chrome.service import Service 
+from selenium.webdriver.chrome.service import Service
 from selenium import webdriver
 from konlpy.tag import Okt
 from sklearn.feature_extraction.text import CountVectorizer, TfidfVectorizer
@@ -15,8 +16,9 @@ warnings.filterwarnings("ignore")
 
 class Data:
 
-    def __init__(self, data=None):
+    def __init__(self, data=dict(), df=pd.DataFrame()):
         self.data = data
+        self.df = df
 
 
     def get_data(self) -> dict:
@@ -24,25 +26,35 @@ class Data:
 
 
     def get_dataframe(self) -> pd.DataFrame:
-        return self.data
+        return self.df
+
+
+    def update_data(self, data: dict):
+        self.data.update(data)
+
+
+    def update_dataframe(self, df: pd.DataFrame):
+        self.df = self.df.append(df)
 
 
 class PlaceData(Data):
 
-    def request_data(self, service_info: dict, local_info: dict, keywords=list()):
+    def request_data(self, service_info: dict, local_info: dict, keyword=str()):
         pass
 
 
 class KakaoPlaceData(PlaceData):
 
-    def request_data(self, service_info: dict, local_info: dict, keyword=''):
+    def __init__(self, data=dict(), df=pd.DataFrame()):
+        super().__init__(data, df)
+        self.similr_index = self.make_similar_index() if len(df) else np.array(None)
+
+
+    def request_data(self, service_info: dict, local_info: dict, keyword=str()):
         """
         카카오 API로부터 장소 정보를 요청하고 추가적인 정보를 스크래핑하는 메인 메소드
         키워드가 없을 경우 빅데이터를 기반으로 모든 장소에 대한 정보 요청
         향후 다른 플랫폼(네이버 등)에 대한 검색 기능 추가 시 해당 메소드의 범용성을 개선해 상위 클래스 메소드로 변환
-
-        service_info.keys() = ['url', 'key', 'size']
-        local_info.keys() = ['si', 'gu', 'dong', 'address']
         """
 
         place_dict = {'places': list(), 'errors': list()}
@@ -52,6 +64,9 @@ class KakaoPlaceData(PlaceData):
         headers = {"Authorization": service_info['key']}
         size = min(service_info['size'],len(place_list)) if service_info['size'] else None
 
+        service = Service(executable_path=ChromeDriverManager().install())
+        driver = webdriver.Chrome(service=service)
+
         for place_name in place_list[:size]:
             response = requests.get(url=service_url, headers=headers,
                                     params={'query': place_name}).json()
@@ -59,14 +74,17 @@ class KakaoPlaceData(PlaceData):
                 try:
                     if place['address_name'].__contains__(local_info['address']):
                         if place['category_group_name'] == '음식점':
-                            place.update(self.request_details(place['place_url']))
-                            place.update(self.get_token_dict(place['menu'], place['review']))
-                            place.update(self.get_temp_dict(place['review']))
+                            place.update(self.request_details(driver, place['place_url']))
+                            place.update(self.get_token_dict(
+                                place['category_name'], place['menu'], place['review']))
+                            # place.update(self.get_temp_dict(place['review']))
                             place_dict['places'].append(place)
                 except:
                     place_dict['errors'].append(place)
 
-        self.data = place_dict
+        driver.close()
+        self.update_data = place_dict
+        self.update_dataframe(self.dict_to_df(place_dict))
 
 
     def make_place_list(self, local_info: dict) -> list:
@@ -88,16 +106,18 @@ class KakaoPlaceData(PlaceData):
         return place_df['사업장명'].tolist()
 
 
-    def request_details(self, place_url: str) -> dict:
+    # =================================================================================
+    # ================================= Scraping Part =================================
+    # =================================================================================
+
+
+    def request_details(self, driver: webdriver.Chrome, place_url: str) -> dict:
         """
         카카오 맛집 페이지에서 별점, 메뉴, 리뷰 데이터를 스크래핑하는 메소드
         스크래핑과 별도로 메뉴와 리뷰에 대한 TF-IDF 벡터값을 계산하여 데이터에 추가
         """
 
         details = dict()
-
-        service = Service(executable_path=ChromeDriverManager().install())
-        driver = webdriver.Chrome(service=service)
 
         driver.get(place_url)
         content_xpath= '/html/body/div[2]/div[2]'
@@ -140,7 +160,6 @@ class KakaoPlaceData(PlaceData):
         return (raiting, review_num, blog_num)
 
 
-
     def get_details_menu(self, driver: webdriver.Chrome) -> list:
         """
         카카오 맛집 페이지에서 메뉴 목록을 추출하는 메소드
@@ -165,7 +184,7 @@ class KakaoPlaceData(PlaceData):
         return menu_list
 
 
-    def get_details_review(self, driver: webdriver.Chrome, review_num: int) -> list:  
+    def get_details_review(self, driver: webdriver.Chrome, review_num: int) -> list:
         """
         카카오 맛집 페이지에서 리뷰 목록을 추출하는 메소드
         """
@@ -177,7 +196,7 @@ class KakaoPlaceData(PlaceData):
             for i in range(1,page_num):
                 review_div = driver.find_element_by_class_name('evaluation_review')
                 comments = review_div.find_elements_by_class_name('txt_comment ')
-                review_list += [comment.text for comment in comments]
+                [review_list.append(comment.text) if comment.text else None for comment in comments]
 
                 if i < 6:
                     review_div.find_element_by_xpath(f'div/a[{i}]').click()
@@ -210,66 +229,109 @@ class KakaoPlaceData(PlaceData):
             delay += delay
 
 
-    def get_token_dict(self, menu: list, review: list) -> dict:
+    # =================================================================================
+    # ================================= Tokenize Part =================================
+    # =================================================================================
+
+
+    def get_token_dict(self, category: str, menu: list, review: list) -> dict:
         """
-        메뉴와 리뷰 데이터를 토큰화하는 메소드
+        분류, 메뉴, 리뷰 데이터를 토큰화하는 메소드
         """
 
-        vector_dict = dict()
+        token_dict = dict()
 
-        reviews=[]
-        clean_review_tokenized=[]
-        clean_menu_tokenized=[]
-        total=[]
+        token_dict['category_token'] = ' '.join(
+            [cat.replace(',',' ') for cat in category.split(' > ')[1:]])
+        token_dict['menu_token'] = self.get_tokenized_menu(' '.join(menu))
+        token_dict['review_token'] = self.get_tokenized_review(' '.join(review))
 
-        menu_okt = Okt()
-        menu=' '.join(str(s) for s in menu)
-        clean_menu=re.sub('[-=+,#/\?:^.@*\"※~ㆍ!』‘|\(\)\[\]`\'…》\”\“\’·]', '', menu)
-        clean_menu = re.sub(r'[0-9]+', '', clean_menu)
-        
-        review=' '.join(str(s) for s in review)
-        clean_review=re.sub('[-=+,#/\?:^.@*\"※~ㆍ!』‘|\(\)\[\]`\'…》\”\“\’·]', '', review)
-        clean_review=re.sub("([ㄱ-ㅎㅏ-ㅣ]+)","",clean_review)
-        
-        print(clean_menu)
-        clean_menu_tokenized.append(clean_menu)
-
-        # total.append(" ".join(menu_okt.phrases(clean_menu))+" "+select_tokenize(review_tokenize(clean_review)))
-        total.append(" ".join(menu_okt.phrases(clean_menu)))
-        # total.append(select_tokenize(review_tokenize(clean_review)))
-
-        count_vect_menu = CountVectorizer(min_df=0, ngram_range=(1,2))
-        place_menu = count_vect_menu.fit_transform(total) 
-        place_simi_menu = cosine_similarity(place_menu, place_menu) 
-        place_simi_menu_sorted_ind = place_simi_menu.argsort()[0, ::-1]
-        place_simi_menu_sorted_ind.reshape(-1)
-
-        [print(clean_menu_tokenized[i]) for i in [0,2,3,1]]
-
-        return vector_dict
+        return token_dict
 
 
-    def review_tokenize(review : str) -> tuple:
+    def get_tokenized_menu(self, menu: str) -> str:
+        """
+        메뉴 데이터를 토큰화하는 메소드
+        """
+
         okt = Okt()
-        Okt_morphs=okt.pos(review,norm=True,stem=True)  # 형태소 분석
-        return Okt_morphs
+
+        menu = re.sub('[-=+,#/\?:^.@*\"※~ㆍ!』‘|\(\)\[\]`\'…》\”\“\’·]', '', menu)
+        menu = ' '.join(okt.phrases(menu))
+
+        return ' '.join(set(menu.split()))
 
 
-    def select_tokenize(tokenize : tuple) -> str:
-        filter_review=""
-        for word, pos in tokenize:
-    #        if pos in STOP_WORDS: #리뷰들 보면서 불용어 직접 추가해야 됨
-    #            pass
-            if pos == 'Noun' or pos == "Verb" or pos == "Adjective" or pos == "Adverb":
-                filter_review=filter_review+" "+word        
-        return filter_review
+    def get_tokenized_review(self, review: str) -> str:
+        """
+        리뷰 데이터를 토큰화하는 메소드
+        """
 
+        token_list = list()
+        okt = Okt()
+
+        review = re.sub('[-=+,#/\?:^.@*\"※~ㆍ!』‘|\(\)\[\]`\'…》\”\“\’·]', '', review)
+        review = re.sub('([ㄱ-ㅎㅏ-ㅣ]+)', '', review)
+
+        for word, pos in okt.pos(review, norm=True, stem=True):
+            if pos in ['Noun','Verb','Adjective','Adverb']:
+                token_list.append(word)  
+
+        return ' '.join(token_list)
+
+
+    def make_similar_index(self) -> np.ndarray:
+        """
+        분류, 메뉴, 리뷰에 대한 코사인 유사도 합을 반환하는 메소드
+        """
+
+        if not len(self.df):
+            raise Exception('해당 객체가 요청에 적합한 데이터를 가지고 있지 않습니다.')
+
+        category_similarity = self.get_cosine_similarity('분류명 토큰화') * 0.3
+        menu_similarity = self.get_cosine_similarity('메뉴 토큰화') * 0.5
+        review_similarity = self.get_cosine_similarity('리뷰 토큰화') * 1
+        similarity = category_similarity + menu_similarity + review_similarity
+        return similarity.argsort()[:, ::-1]
+
+
+    def get_cosine_similarity(self, column: str) -> np.ndarray:
+        """
+        특정 열에 대한 코사인 유사도를 반환하는 메소드
+        """
+
+        if column in {'분류명 토큰화', '메뉴 토큰화'}:
+            vectorizer = CountVectorizer(min_df=0, ngram_range=(1,2))
+            array = vectorizer.fit_transform(self.df[column])
+            return cosine_similarity(array, array)
+        elif column in {'리뷰 토큰화'}:
+            vectorizer = TfidfVectorizer()
+            array = vectorizer.fit_transform(self.df[column]).todense()
+            return cosine_similarity(array, array)
+        else:
+            raise Exception(f'대상이 유효하지 않습니다.')
+
+
+    def get_similar_places(self, column: str, name: str, display: int) -> pd.DataFrame:
+        """
+        특정 조건을 만족하는 행과 유사한 데이터프레임을 반환하는 메소드
+        """
+
+        place_row = self.df[self.df[column] == name]
+        place_index = place_row.index.values
+        return self.df.loc[self.similr_index[place_index,1:display][0]]
+
+
+    # =================================================================================
+    # =================================== Data Part ===================================
+    # =================================================================================
 
 
     def get_temp_dict(self, review: list) -> dict:
         """
         리뷰의 긍정/부정 정도를 종합해 0-100 사이의 온도 수치로 변환하는 메소드
         """
+
         temp_dict = dict()
 
         temp = 36.5
@@ -278,37 +340,50 @@ class KakaoPlaceData(PlaceData):
         return temp_dict
 
 
-    def get_dataframe(self) -> pd.DataFrame:
-        if type(self.data) is not dict or not self.data['places']:
+    def dict_to_df(self, data: dict) -> pd.DataFrame:
+        """
+        딕셔너리 형태의 스크래핑 결과를 데이터프레임으로 변환하는 메소드
+        """
+
+        if not data['places']:
             raise Exception('해당 객체가 요청에 적합한 데이터를 가지고 있지 않습니다.')
 
-        df = pd.DataFrame(self.data['places'])
-        df.drop(['category_group_code','category_group_name','distance','id'], axis=1)
-        df.sort_values(by=['raiting','place_name'], ascending=[False,True], inplace=True)
+        df = pd.DataFrame(data['places'])
+        df.drop(['category_group_code','category_group_name','distance','id'], axis=1, inplace=True)
 
         kr_dict = dict()
         kr_dict['place_name'] = '식당명'
-        kr_dict['address_name'] = '지번주소'
+        kr_dict['address_name'] = '지번 주소'
         kr_dict['category_name'] = '분류명'
         kr_dict['phone'] = '전화번호'
-        kr_dict['place_url'] = '사이트주소'
-        kr_dict['road_address_name'] = '도로명주소'
+        kr_dict['place_url'] = '웹페이지 주소'
+        kr_dict['road_address_name'] = '도로명 주소'
         kr_dict['raiting'] = '별점'
-        kr_dict['review_num'] = '리뷰수'
-        kr_dict['blog_num'] = '블로그리뷰수'
+        kr_dict['review_num'] = '리뷰 수'
+        kr_dict['blog_num'] = '블로그 리뷰 수'
         kr_dict['menu'] = '메뉴'
         kr_dict['review'] = '리뷰'
-        # kr_dict['menu_token'] = '메뉴토큰'
-        # kr_dict['review_token'] = '리뷰토큰'
+        kr_dict['category_token'] = '분류명 토큰화'
+        kr_dict['menu_token'] = '메뉴 토큰화'
+        kr_dict['review_token'] = '리뷰 토큰화'
         # kr_dict['temp'] = '온도'
-        df.rename(columns=kr_dict, inplace=True)
 
-        return df
+        return df.rename(columns=kr_dict)
 
 
-# ============================================================================================
-# ======================================== DEBUG CODE ========================================
-# ============================================================================================
+    def update_dataframe(self, df: pd.DataFrame):
+        """
+        데이터프레임 및 코사인 유사도 배열을 업데이트하는 메소드
+        """
+
+        self.df = self.df.append(df)
+        self.df.sort_values(by=['별점','식당명'], ascending=[False,True], inplace=True)
+        self.similr_index = self.make_similar_index()
+
+
+# =====================================================================================
+# ================================== DEBUG FUNCTIONS ==================================
+# =====================================================================================
 
 
 def debug_request_data(size=0, keywords=list()):
@@ -348,7 +423,7 @@ def debug_merge_data():
     API 요청 결과와 스크래핑한 결과를 합치고 저장하는 함수
     """
 
-    kakao_data = {'documents': list(), 'errors': list()}
+    kakao_data = {'places': list(), 'errors': list()}
 
     with open('debugs/api_result.json','r', encoding='UTF-8') as f:
         api_data = json.load(f)
@@ -356,7 +431,7 @@ def debug_merge_data():
     with open('debugs/scraping_result.json','r', encoding='UTF-8') as f:
         scraping_data = json.load(f)
 
-    for place in api_data['documents']:
+    for place in api_data['places']:
         try:
             place['raiting'] = np.mean(list(map(int, scraping_data[place['place_name']]['별점'])))
             place['raiting'] = np.nan_to_num(place['raiting'])
@@ -364,7 +439,7 @@ def debug_merge_data():
             place['review'] = scraping_data[place['place_name']]['리뷰']
             kakao_data['documents'].append(place)
         except:
-            kakao_data['errors'].append(place) # 별점 3.0 이하 식당
+            kakao_data['errors'].append(place)
 
     with open('kakao_data.json','w') as f:
         json.dump(kakao_data, f, ensure_ascii=False, indent=4)
@@ -372,17 +447,18 @@ def debug_merge_data():
 
 def debug_request_vector():
     """
-    스크래핑한 JSON 파일을 기반으로 TF-IDF 벡터값과 긍정/부정
+    스크래핑한 JSON 파일에 카테고리, 메뉴, 리뷰 토큰화 및 리뷰 긍정/부정 판단 결과 추가
     """
 
     with open('debugs/kakao_data.json','r', encoding='UTF-8') as f:
         kakao_data = json.load(f)
 
-    for place in kakao_data['documents']:
+    for i, place in enumerate(kakao_data['places']):
         kakao = KakaoPlaceData()
-        place.update(kakao.get_token_dict(place['menu'], place['review']))
+        place.update(kakao.get_token_dict(
+            place['category_name'], place['menu'], place['review']))
         # place.update(kakao.get_temp_dict(place['review']))
-        kakao_data['documents'].append(place)
+        kakao_data['places'][i] = place
 
     with open('service_data.json','w') as f:
         json.dump(kakao_data, f, ensure_ascii=False, indent=4)
