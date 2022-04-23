@@ -415,89 +415,9 @@ class KakaoPlaceData(PlaceData):
         """
 
         self.df = self.df.append(df)
-        self.df.sort_values(by=['별점','식당명'], ascending=[False,True], inplace=True)
+        self.df['인기도'] = self.df['별점']**1.2 + np.log(self.df['리뷰 수'])
+        self.df.sort_values(by=['인기도','식당명'], ascending=[False,True], inplace=True)
+        del self.df['인기도']
+        self.df.drop_duplicates(['식당명'], inplace=True)
         self.df = self.df.set_index('식당명').reset_index()
         self.similr_index = self.make_similar_index()
-
-
-# =====================================================================================
-# ================================== DEBUG FUNCTIONS ==================================
-# =====================================================================================
-
-
-def debug_request_data(size=0, keywords=list()):
-    """
-    기존 request_data() 메소드에서 스크래핑 부분까지만 진행하고 결과를 JSON 파일로 저장하는 디버그용 함수
-    """
-
-    from api import get_kakao_key
-    kakao_data = KakaoPlaceData()
-
-    place_dict = {'places': list(), 'errors': list()}
-    local_info = {'si': '서울특별시', 'gu': '강남구', 'dong': '삼성동', 'address': '서울 강남구 삼성동'}
-    place_list = keywords if keywords else kakao_data.make_place_list(local_info)
-
-    service_url = 'https://dapi.kakao.com/v2/local/search/keyword.json'
-    headers = {"Authorization": get_kakao_key()}
-    size = min(size,len(place_list)) if size else None
-
-    for place_name in place_list[:size]:
-        response = requests.get(url=service_url, headers=headers,
-                                params={'query': place_name}).json()
-        for place in response['documents']:
-            try:
-                if place['address_name'].__contains__(local_info['address']):
-                    if place['category_group_name'] == '음식점':
-                        place.update(kakao_data.request_details(place['place_url']))
-                        place_dict['places'].append(place)
-            except:
-                place_dict['errors'].append(place)
-
-    with open('./kakao_data.json','w') as f:
-        json.dump(place_dict, f, ensure_ascii=False, indent=4)
-
-
-def debug_merge_data():
-    """
-    API 요청 결과와 스크래핑한 결과를 합치고 저장하는 함수
-    """
-
-    kakao_data = {'places': list(), 'errors': list()}
-
-    with open('debugs/api_result.json','r', encoding='UTF-8') as f:
-        api_data = json.load(f)
-
-    with open('debugs/scraping_result.json','r', encoding='UTF-8') as f:
-        scraping_data = json.load(f)
-
-    for place in api_data['places']:
-        try:
-            place['raiting'] = np.mean(list(map(int, scraping_data[place['place_name']]['별점'])))
-            place['raiting'] = np.nan_to_num(place['raiting'])
-            place['menu'] = scraping_data[place['place_name']]['메뉴']
-            place['review'] = scraping_data[place['place_name']]['리뷰']
-            kakao_data['documents'].append(place)
-        except:
-            kakao_data['errors'].append(place)
-
-    with open('kakao_data.json','w') as f:
-        json.dump(kakao_data, f, ensure_ascii=False, indent=4)
-
-
-def debug_request_vector():
-    """
-    스크래핑한 JSON 파일에 카테고리, 메뉴, 리뷰 토큰화 및 리뷰 긍정/부정 판단 결과 추가
-    """
-
-    with open('debugs/kakao_data.json','r', encoding='UTF-8') as f:
-        kakao_data = json.load(f)
-
-    for i, place in enumerate(kakao_data['places']):
-        kakao = KakaoPlaceData()
-        place.update(kakao.get_token_dict(
-            place['category_name'], place['menu'], place['review']))
-        # place.update(kakao.get_temp_dict(place['review']))
-        kakao_data['places'][i] = place
-
-    with open('service_data.json','w') as f:
-        json.dump(kakao_data, f, ensure_ascii=False, indent=4)
