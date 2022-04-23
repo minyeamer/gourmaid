@@ -18,7 +18,7 @@ class Data:
 
     def __init__(self, data=dict(), df=pd.DataFrame()):
         self.data = data
-        self.df = df
+        self.df = df.fillna(str())
 
 
     def get_data(self) -> dict:
@@ -47,7 +47,7 @@ class KakaoPlaceData(PlaceData):
 
     def __init__(self, data=dict(), df=pd.DataFrame()):
         super().__init__(data, df)
-        self.similr_index = self.make_similar_index() if len(df) else np.array(None)
+        self.similr_index = self.make_similar_index() if len(df) else None
 
 
     def request_data(self, service_info: dict, local_info: dict, keyword=str()):
@@ -77,13 +77,13 @@ class KakaoPlaceData(PlaceData):
                             place.update(self.request_details(driver, place['place_url']))
                             place.update(self.get_token_dict(
                                 place['category_name'], place['menu'], place['review']))
-                            # place.update(self.get_temp_dict(place['review']))
+                            place.update(self.get_sentiment_dict(place['review']))
                             place_dict['places'].append(place)
                 except:
                     place_dict['errors'].append(place)
 
         driver.close()
-        self.update_data = place_dict
+        self.update_data(place_dict)
         self.update_dataframe(self.dict_to_df(place_dict))
 
 
@@ -121,43 +121,53 @@ class KakaoPlaceData(PlaceData):
 
         driver.get(place_url)
         content_xpath= '/html/body/div[2]/div[2]'
-        self.wait_for_xpath(driver, content_xpath)
+        self.wait_for_xpath(driver, content_xpath, delay=3)
 
-        details_num = self.get_details_num(driver)
-        details['raiting'] = details_num[0]
-        details['review_num'] = details_num[1]
-        details['blog_num'] = details_num[2]
+        details_summary = self.get_details_summary(driver)
+        details['bg_image'] = details_summary['bg_image']
+        details['raiting'] = details_summary['raiting']
+        details['review_num'] = details_summary['review_num']
+        details['blog_num'] = details_summary['blog_num']
         details['menu'] = self.get_details_menu(driver)
-        details['review'] = self.get_details_review(driver, details_num[1])
+        details['review'] = self.get_details_review(driver, details['review_num'])
 
         return details
 
 
-    def get_details_num(self, driver: webdriver.Chrome) -> tuple:
+    def get_details_summary(self, driver: webdriver.Chrome) -> dict:
         """
         카카오 맛집 페이지에서 별점, 리뷰 개수, 블로그 리뷰 개수를 추출하는 메소드
         """
 
+        summary = dict()
+
+        try:
+            bg_present = driver.find_element_by_class_name('bg_present').get_attribute('style')
+            summary['bg_image'] = 'https:' + re.search('url\("(.*)"', bg_present)[1]
+        except:
+            summary['bg_image'] = ''
+
         try:
             inner_place = driver.find_element_by_class_name('inner_place')
             evaluation = inner_place.find_element_by_class_name('link_evaluation')
-            raiting = float(evaluation.find_element_by_tag_name('span').text)
+            summary['raiting'] = float(evaluation.find_element_by_tag_name('span').text)
+            summary['raiting'] = 0.0 if summary['raiting'] > 5.0 else summary['raiting']
         except:
-            raiting = 0.0
+            summary['raiting'] = 0.0
 
         try:
             total_evaluation = driver.find_element_by_class_name('total_evaluation')
-            review_num = int(total_evaluation.find_element_by_tag_name('span').text)
+            summary['review_num'] = int(total_evaluation.find_element_by_tag_name('span').text)
         except:
-            review_num = 0
+            summary['review_num'] = 0
 
         try:
             blog_div = driver.find_element_by_class_name('cont_review')
-            blog_num = int(blog_div.find_element_by_class_name('num_g').text)
+            summary['blog_num'] = int(blog_div.find_element_by_class_name('num_g').text)
         except:
-            blog_num
+            summary['blog_num']
         
-        return (raiting, review_num, blog_num)
+        return summary
 
 
     def get_details_menu(self, driver: webdriver.Chrome) -> list:
@@ -211,7 +221,7 @@ class KakaoPlaceData(PlaceData):
         return review_list
 
 
-    def wait_for_xpath(self, driver: webdriver.Chrome, xpath: str, delay=0.5):
+    def wait_for_xpath(self, driver: webdriver.Chrome, xpath: str, delay=1):
         """
         셀레니움 스크래핑 중 딜레이를 발생시키기 위한 메소드
         """
@@ -219,7 +229,13 @@ class KakaoPlaceData(PlaceData):
         time.sleep(delay)
         accum_delay = delay
 
-        while not driver.find_element_by_xpath(xpath).text:
+        while True:
+            try:
+                if driver.find_element_by_xpath(xpath).text:
+                    break
+            except:
+                pass
+
             if accum_delay > 10:
                 raise Exception('카카오 플레이스 페이지를 요청하는 과정에서 문제가 발생했습니다.')
 
@@ -300,26 +316,34 @@ class KakaoPlaceData(PlaceData):
         특정 열에 대한 코사인 유사도를 반환하는 메소드
         """
 
+        tokenized_data = self.df[column].fillna('')
+
         if column in {'분류명 토큰화', '메뉴 토큰화'}:
             vectorizer = CountVectorizer(min_df=0, ngram_range=(1,2))
-            array = vectorizer.fit_transform(self.df[column])
+            array = vectorizer.fit_transform(tokenized_data)
             return cosine_similarity(array, array)
         elif column in {'리뷰 토큰화'}:
             vectorizer = TfidfVectorizer()
-            array = vectorizer.fit_transform(self.df[column]).todense()
+            array = vectorizer.fit_transform(tokenized_data).todense()
             return cosine_similarity(array, array)
         else:
             raise Exception(f'대상이 유효하지 않습니다.')
 
 
-    def get_similar_places(self, column: str, name: str, display: int) -> pd.DataFrame:
+    def get_similar_places(self, result_df: pd.DataFrame, column: str, display: int) -> pd.DataFrame:
         """
         특정 조건을 만족하는 행과 유사한 데이터프레임을 반환하는 메소드
         """
 
-        place_row = self.df[self.df[column] == name]
-        place_index = place_row.index.values
-        return self.df.loc[self.similr_index[place_index,1:display][0]]
+        place_value = result_df.iloc[0][column]
+        place_index = self.df[self.df[column] == place_value].index.values
+        max_index = min(display*2, len(self.df))
+
+        similar_df = self.df.loc[self.similr_index[place_index,1:max_index][0]]
+        result_df = result_df.append(similar_df)
+        result_df.drop_duplicates(['식당명'], inplace=True)
+
+        return result_df.iloc[:display] if len(result_df) > display else result_df
 
 
     # =================================================================================
@@ -327,17 +351,17 @@ class KakaoPlaceData(PlaceData):
     # =================================================================================
 
 
-    def get_temp_dict(self, review: list) -> dict:
+    def get_sentiment_dict(self, review: list) -> dict:
         """
-        리뷰의 긍정/부정 정도를 종합해 0-100 사이의 온도 수치로 변환하는 메소드
+        리뷰의 감정을 분류하고 각 분류별 개수를 반환하는 메소드
         """
 
-        temp_dict = dict()
+        sentiment_dict = dict()
 
-        temp = 36.5
-        temp_dict['temp'] = temp
+        sentiment_dict['positive'] = 0
+        sentiment_dict['negative'] = 0
 
-        return temp_dict
+        return sentiment_dict
 
 
     def dict_to_df(self, data: dict) -> pd.DataFrame:
@@ -358,6 +382,7 @@ class KakaoPlaceData(PlaceData):
         kr_dict['phone'] = '전화번호'
         kr_dict['place_url'] = '웹페이지 주소'
         kr_dict['road_address_name'] = '도로명 주소'
+        kr_dict['bg_image'] = '이미지 주소'
         kr_dict['raiting'] = '별점'
         kr_dict['review_num'] = '리뷰 수'
         kr_dict['blog_num'] = '블로그 리뷰 수'
@@ -366,9 +391,22 @@ class KakaoPlaceData(PlaceData):
         kr_dict['category_token'] = '분류명 토큰화'
         kr_dict['menu_token'] = '메뉴 토큰화'
         kr_dict['review_token'] = '리뷰 토큰화'
-        # kr_dict['temp'] = '온도'
+        kr_dict['positive'] = '긍정 리뷰 수'
+        kr_dict['negative'] = '부정 리뷰 수'
 
         return df.rename(columns=kr_dict)
+
+
+    def update_data(self, data: dict):
+        """
+        딕셔너리를 업데이트하는 메소드
+        """
+
+        if not self.data:
+            self.data.update(data)
+        else:
+            self.data['places'].append(data['places'])
+            self.data['errors'].append(data['errors'])
 
 
     def update_dataframe(self, df: pd.DataFrame):
@@ -378,6 +416,7 @@ class KakaoPlaceData(PlaceData):
 
         self.df = self.df.append(df)
         self.df.sort_values(by=['별점','식당명'], ascending=[False,True], inplace=True)
+        self.df = self.df.set_index('식당명').reset_index()
         self.similr_index = self.make_similar_index()
 
 

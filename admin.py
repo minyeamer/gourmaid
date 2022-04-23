@@ -1,7 +1,7 @@
-import enum
+from datetime import datetime
 import json
 import pandas as pd
-from datetime import datetime
+import re
 from data import KakaoPlaceData
 
 
@@ -23,7 +23,7 @@ class KakaoAdmin(Admin):
     def __init__(self, name: str, address: str, service_key: str, local_info=dict()):
         super().__init__(name, address)
         service_url = 'https://dapi.kakao.com/v2/local/search/keyword.json'
-        self.service_info = {'url': service_url, 'key': service_key}
+        self.service_info = {'url': service_url, 'key': 'KakaoAK '+service_key}
         self.local_info = local_info if local_info else {'si': '', 'gu': '', 'dong': '', 'name': ''}
 
 
@@ -67,16 +67,10 @@ class KakaoAdmin(Admin):
             raise Exception(f'{data_type} 타입은 현재 지원하지 않습니다.')
 
 
-    def advanced_search(self, keywords: list, target=0, display=3, exact=False) -> dict:
+    def advanced_search(self, keywords: list, target='일반 검색', display=None, exact=False) -> dict:
         """
         카카오 맛집 데이터프레임 상에서 키워드와 연관성이 있는 맛집 정보를 검색해 결과를 반환하는 메소드
         해당 메소드는 향후 KakaoPlaceData 클래스로 이동 가능
-        (현재 1번 진행 중) 불짬뽕 display=10 exact=False 덮밥
-        1. 키워드를 포함하는 식당명이 있으면 해당 식당 정보 출력 (1 불짬뽕 삼성점, 2 불짬뽕 강남점)
-        2. 보여주는 개수가 부족하면 메뉴에서 키워드를 검색 (3 불짬뽕 메뉴를 갖고 있는 식당, 4 ,,,)
-        3. 보여주는 개수가 부족하면 리뷰에서 키워드를 검색 (5 불짬뽕 리뷰를 갖고 있는 식당)
-        4. 현재까지 보여준 식당을 기반으로 유사한 식당 보여줌 (불짬뽕 삼성점, 중화반점 강남점)
-           1등과 유사한 식당을 보여줌 (5개) > 10개
         """
 
         if type(self.service_data.get_data()) is not dict:
@@ -84,54 +78,74 @@ class KakaoAdmin(Admin):
 
         df = self.service_data.get_dataframe()
         result_df = df.iloc[:0]
+        display = len(df) if not display else display
 
-        if target == 0: # 식당명, 메뉴 검색
+        if not keywords:
+            return df.iloc[:display]
+
+        if target == '일반 검색': # 식당명, 메뉴 검색
             result_df = self.search_name(df, result_df, keywords, display, exact)
             result_df = self.search_by_row('메뉴', df, result_df, keywords, display, exact)
-        elif target == 1: # 식당명 검색
+        elif target == '식당명 검색': # 식당명 검색
             result_df = self.search_name(df, result_df, keywords, display, exact)
-        elif target == 2: # 메뉴 검색
+        elif target == '메뉴 검색': # 메뉴 검색
             result_df = self.search_by_row('메뉴', df, result_df, keywords, display, exact)
-        elif target == 3: # 리뷰 검색
+        elif target == '리뷰 검색': # 리뷰 검색
             result_df = self.search_by_row('리뷰', df, result_df, keywords, display, exact)
-        elif target == 4: # 모든 조건 검색
+        elif target == '전체 검색': # 모든 조건 검색
             result_df = self.search_name(df, result_df, keywords, display, exact)
             result_df = self.search_by_row('메뉴', df, result_df, keywords, display, exact)
             result_df = self.search_by_row('리뷰', df, result_df, keywords, display, exact)
         else:
             raise Exception('검색 대상이 유효하지 않습니다.')
 
-        # 검색 결과가 없으면 카카오 API에 키워드를 요청
+        # 검색 결과가 없으면 전체 검색을 진행해보고 카카오 API에 키워드를 요청
         if not len(result_df):
-            result_df = self.search_api(' '.join(keywords), display)
+            verify_df = self.search_name(df, result_df, keywords, 1, exact)
+            verify_df = self.search_by_row('메뉴', df, verify_df, keywords, 1, exact)
+            verify_df = self.search_by_row('리뷰', df, verify_df, keywords, 1, exact)
+            if not len(verify_df):
+                result_df = self.search_api(' '.join(keywords), display)
+            else:
+                raise Exception('{} 검색 결과가 없어요.'.format(' '.join(keywords)))
 
         # 목록 개수가 요구사항보다 적으면 코사인 유사도 기반 탐색 진행
         if len(result_df) < display:
-            column = '식당명'
-            place_name = result_df.iloc[0][column]
-            similar_df = self.service_data.get_similar_places(column, place_name, display-len(result_df))
-            result_df = result_df.append(similar_df)
+            result_df = self.service_data.get_similar_places(result_df, '식당명', display)
 
-        return result_df.set_index('식당명').reset_index()
-        return result_df.set_index('식당명').T.to_dict()
+        return result_df.set_index('식당명').reset_index() # 데이터프레임 반환
+        return result_df.set_index('식당명').T.to_dict() # 딕셔너리 반환
 
 
     def search_name(self, df: pd.DataFrame, result_df: pd.DataFrame, keywords: list, display: int, exact: bool) -> pd.DataFrame:
+        """
+        카카오 맛집 데이터프레임 상에서 키워드와 연관성이 있는 식당명을 검색해 결과를 반환하는 메소드
+        """
+
         if len(result_df) >= display:
             return result_df
 
         target = df['식당명'].copy()
-        match_df = df['식당명'].notnull()
+        match_df = df['식당명'].notnull() if exact else df['식당명'].isnull()
 
-        for keyword in keywords:
-            match_df &= (target == keyword) if exact else target.str.contains(keyword)
+        if exact:
+            for keyword in keywords:
+                    match_df &= (target == keyword)
+        else:
+            for keyword in keywords:
+                    match_df |= target.str.contains(keyword)
 
-        result_df = result_df.append(df[match_df]).drop_duplicates(['식당명'])
+        result_df = result_df.append(df[match_df])
+        result_df.drop_duplicates(['식당명'], inplace=True)
 
         return result_df.iloc[:display] if len(result_df) > display else result_df
 
 
     def search_by_row(self, column: str, df: pd.DataFrame, result_df: pd.DataFrame, keywords: list, display: int, exact: bool) -> pd.DataFrame:
+        """
+        카카오 맛집 데이터프레임 상에서 키워드와 연관성이 있는 목록 내 데이터를 검색해 결과를 반환하는 메소드
+        """
+
         if column not in {'메뉴','리뷰'}:
             raise Exception('검색 대상이 유효하지 않습니다.')
 
@@ -139,45 +153,63 @@ class KakaoAdmin(Admin):
             return result_df
 
         target = df[column].copy()
-        match_df = df['식당명'].notnull()
+        match_df = df['식당명'].notnull() if exact else df['식당명'].isnull()
 
         match_list = list()
 
-        if exact:
-            for target_items in target.iteritems():
-                word_list = list()
-                for target_item in target_items[1]:
-                    word_list += target_item.split()
+        # if exact:
+        for target_items in target.iteritems():
+            # 데이터프레임을 직접 가져올 때 리스트가 문자열로 합쳐지는 문제에 대한 대비책
+            # try:
+            #     target_items[1].replace('"',"'")
+            #     target_items = re.search("\['(.*)'\]",target_items[1])
+            #     target_items = target_items[1].split("', '")
+            # except:
+            #     match_list.append(False)
+            #     continue
 
-                match_row = True
-                for keyword in keywords:
-                    match_keyword = sum([(menu == keyword) for menu in word_list])
-                    match_row &= True if match_keyword else False
+            word_list = list()
+            for target_item in target_items[1]:
+                word_list += target_item.split()
 
-                match_list.append(match_row)
-            match_df &= match_list
-        else:
-            target = target.apply(lambda x: ' '.join(x))
-
+            match_row = True
             for keyword in keywords:
-                match_df &= target.str.contains(keyword)
+                if exact:
+                    match_keyword = sum([(word == keyword) for word in word_list])
+                    match_row &= True if match_keyword else False
+                else:
+                    match_keyword = sum([word.__contains__(keyword) for word in word_list])
+                    match_row |= True if match_keyword else False
 
-        result_df = result_df.append(df[match_df]).drop_duplicates(['식당명'])
+            match_list.append(match_row)
+        match_df &= match_list
+        # else:
+        #     target = target.apply(lambda x: str(x))
+        #     for keyword in keywords:
+        #         match_df &= target.str.contains(keyword)
+
+        result_df = result_df.append(df[match_df])
+        result_df.drop_duplicates(['식당명'], inplace=True)
 
         return result_df.iloc[:display] if len(result_df) > display else result_df
 
 
     def search_api(self, keyword: str, display: int) -> pd.DataFrame:
+        """
+        카카오 API에 키워드와 연관성이 있는 장소를 검색한 결과를 반환하는 메소드
+        """
+
         kakao_data = KakaoPlaceData()
         self.service_info['size'] = 1
 
         try:
             kakao_data.request_data(self.service_info, self.local_info, keyword)
         except:
-            raise Exception(f'{keyword} 검색 결과가 없어요.') # 에러 페이지 생성
+            raise Exception(f'{keyword} 검색 결과가 없어요.')
 
         result_df = kakao_data.get_dataframe()
         self.service_data.update_data(kakao_data.get_data())
+        raise Exception('test')
         self.update_service_data(json)
 
         return result_df.iloc[:display] if len(result_df) > display else result_df
