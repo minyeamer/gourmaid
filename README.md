@@ -1,10 +1,10 @@
 # Gourmaid
-- 카카오 API를 통해 수집한 데이터에 기반한 맛집 검색 서비스
-- 카카오 장소 검색을 맛집에 최적화하여 웹상에서 구현하여 사용자 편의성 제공
+카카오 API를 통해 수집한 데이터에 기반한 맛집 검색 서비스   
+카카오 장소 검색을 맛집에 최적화하여 웹상에서 구현하여 사용자 편의성 제공
 
 <br>
 
-![search](https://blog.kakaocdn.net/dn/cNsL1H/btrAmGFsrtr/0PbWlhjU56EDZIWmKiuRaK/img.gif)
+![search](https://imgur.com/HbprdGF.gif)
 
 
 ---
