@@ -2,6 +2,11 @@
 - 카카오 API를 통해 수집한 데이터에 기반한 맛집 검색 서비스
 - 카카오 장소 검색을 맛집에 최적화하여 웹상에서 구현하여 사용자 편의성 제공
 
+<ul>
+<br>
+<iframe class="imgur-embed" width="100%" height="1280" frameborder="0" src="https://i.imgur.com/sqr9R6b.gifv#embed"></iframe>
+</ul>
+
 ---
 
 ## Index
@@ -11,9 +16,8 @@
   4. [Main Classes](#4-main-classes)
   5. [Main Methods](#5-main-methods)
   6. [Input/Output](#6-inputoutput)
-  7. [Mail Example](#7-mail-example)
-  8. [Error List](#8-error-list)
-  9. [Restropective](#9-restropective)
+  7. [Error List](#7-error-list)
+  8. [Restropective](#8-restropective)
 
 ---
 
@@ -127,15 +131,7 @@ service_data.json = {
 
 ---
 
-## 7. Web Search Example
-
-<br>
-
-![search](https://i.imgur.com/sqr9R6b.gif)
-
----
-
-## 8. Error List
+## 7. Error List
 
 ### 404 Forbidden
 - 카카오 플레이스 페이지에 지속적인 요청을 하다보니 접속이 차단되는 경우가 발생
@@ -146,7 +142,7 @@ service_data.json = {
 
 ---
 
-## 9. Restropective
+## 8. Restropective
 - 키워드도 토큰화를 진행하여 의미있는 문장인지, 아니면 단순한 단어들의 집합인지 구분하여   
   사용자의 의도에 맞는 결과를 보여주었으면 좋겠지만 시간 부족으로 구현하지 못한 점이 아쉬움
 - 사용자의 GPS 상 위치를 파악하여 가까운 맛집 순으로 보여주면 좋겠지만,   
