@@ -161,7 +161,6 @@ class KakaoAdmin(Admin):
 
         match_list = list()
 
-        # if exact:
         for target_items in target.iteritems():
             # 데이터프레임을 직접 가져올 때 리스트가 문자열로 합쳐지는 문제에 대한 대비책
             # try:
@@ -217,7 +216,6 @@ class KakaoAdmin(Admin):
 
         result_df = kakao_data.get_dataframe()
         self.service_data.update_data(kakao_data.get_data())
-        raise Exception('test')
         self.update_service_data(json)
 
         return result_df.iloc[:display] if len(result_df) > display else result_df

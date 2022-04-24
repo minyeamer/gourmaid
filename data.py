@@ -39,7 +39,7 @@ class Data:
 
 class PlaceData(Data):
 
-    def request_data(self, service_info: dict, local_info: dict, keyword=str()):
+    def request_data(self, service_info: dict, local_info: dict, keyword=str(), size=1):
         pass
 
 
