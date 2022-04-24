@@ -20,10 +20,13 @@ class Admin(Person):
 
 class KakaoAdmin(Admin):
 
-    def __init__(self, name: str, address: str, service_key: str, local_info=dict()):
+    def __init__(self, name: str, address: str, service_keys: dict, local_info=dict()):
         super().__init__(name, address)
-        service_url = 'https://dapi.kakao.com/v2/local/search/keyword.json'
-        self.service_info = {'url': service_url, 'key': 'KakaoAK '+service_key}
+        service_urls = dict()
+        service_urls['kakao_search'] = 'https://dapi.kakao.com/v2/local/search/keyword.json'
+        service_urls['kakao_map'] = 'https://dapi.kakao.com/v2/maps/sdk.js'
+        service_urls['naver_clova'] = 'https://naveropenapi.apigw.ntruss.com/sentiment-analysis/v1/analyze'
+        self.service_info = {'urls': service_urls, 'keys': service_keys}
         self.local_info = local_info if local_info else {'si': '', 'gu': '', 'dong': '', 'name': ''}
 
 
@@ -37,17 +40,16 @@ class KakaoAdmin(Admin):
         self.service_data = KakaoPlaceData(service_data, service_df)
 
         if not service_data:
-            self.service_info['size'] = size
-            self.service_data.request_data(self.service_info, self.local_info)
+            self.service_data.request_data(self.service_info, self.local_info, size=size)
         elif not len(service_df):
-            service_df = self.service_data.dict_to_df(service_data)
+            service_df = self.service_data.dict_to_df(service_data['places'])
             self.service_data.update_dataframe(service_df)
 
 
     def update_service_data(self, data_type: type):
         """
         관리자가 보유한 서비스 데이터를 서버에 저장하는 관리자 메소드
-        현재는 pd.DataFrame 및 json 타입만 지원
+        현재는 json 및 pd.DataFrame 타입만 지원
         """
 
         if type(self.service_data.get_data()) is not dict:
@@ -55,16 +57,18 @@ class KakaoAdmin(Admin):
 
         if data_type is json:
             data = self.service_data.get_data()
-            with open('service_data.json','w') as f:
+            with open('data/service_data.json','w') as f:
                 json.dump(data, f, ensure_ascii=False, indent=4)
             with open(f'log/service_data_{datetime.now()}.json','w') as f:
                 json.dump(data, f, ensure_ascii=False, indent=4)
         elif data_type is pd.DataFrame:
             df = self.service_data.get_dataframe().set_index('식당명')
-            df.to_csv('service_data.csv')
+            df.to_csv('data/service_data.csv')
             df.to_csv(f'log/service_data_{datetime.now()}.csv')
         else:
             raise Exception(f'{data_type} 타입은 현재 지원하지 않습니다.')
+
+        print(f'[{datetime.now()}] {data_type} 서비스 데이터가 업데이트 되었습니다.') # 로그 기록
 
 
     def advanced_search(self, keywords: list, target='일반 검색', display=None, exact=False) -> dict:
@@ -172,21 +176,26 @@ class KakaoAdmin(Admin):
             for target_item in target_items[1]:
                 word_list += target_item.split()
 
-            match_row = True
             for keyword in keywords:
                 if exact:
+                    match_row = True
                     match_keyword = sum([(word == keyword) for word in word_list])
                     match_row &= True if match_keyword else False
                 else:
+                    match_row = False
                     match_keyword = sum([word.__contains__(keyword) for word in word_list])
                     match_row |= True if match_keyword else False
 
             match_list.append(match_row)
+
+        if exact:
+            for keyword in keywords:
+                    match_df &= match_list
+        else:
+            for keyword in keywords:
+                    match_df |= match_list
+
         match_df &= match_list
-        # else:
-        #     target = target.apply(lambda x: str(x))
-        #     for keyword in keywords:
-        #         match_df &= target.str.contains(keyword)
 
         result_df = result_df.append(df[match_df])
         result_df.drop_duplicates(['식당명'], inplace=True)
@@ -200,7 +209,6 @@ class KakaoAdmin(Admin):
         """
 
         kakao_data = KakaoPlaceData()
-        self.service_info['size'] = 1
 
         try:
             kakao_data.request_data(self.service_info, self.local_info, keyword)
