@@ -4,7 +4,7 @@
 
 <ul>
 <br>
-<iframe class="imgur-embed" width="100%" height="1280" frameborder="0" src="https://i.imgur.com/sqr9R6b.gifv#embed"></iframe>
+<img src="https://i.imgur.com/HbprdGF.gif">
 </ul>
 
 ---
