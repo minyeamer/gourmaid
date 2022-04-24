@@ -208,7 +208,7 @@ class KakaoPlaceData(PlaceData):
         page_num = int(np.ceil(review_num / 5))
 
         try:
-            for i in range(1,page_num):
+            for i in range(1,page_num+1):
                 review_div = driver.find_element_by_class_name('evaluation_review')
                 comments = review_div.find_elements_by_class_name('txt_comment ')
                 [review_list.append(comment.text) if comment.text else None for comment in comments]
