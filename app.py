@@ -16,11 +16,12 @@ def load_main_page(session: st.AutoSessionState, admin: KakaoAdmin):
         session.search = False
         session.page = 0
 
-    title, logo, margin = st.columns([4,1,10])
-    with title:
-        st.title('Gourmaid')
-    with logo:
-        st.image('https://cleanmyhouse.biz/wp-content/uploads/2018/01/Logomakr_4F0qnR.png',width=50)
+    st.markdown("""
+                <h1>Gourmaid
+                <img src="https://cleanmyhouse.biz/wp-content/uploads/2018/01/Logomakr_4F0qnR.png"
+                     width="8%" style="margin-left:0.1rem;margin-bottom:3rem;">
+                </h1>
+                """,unsafe_allow_html=True)
 
     # 배너 이미지
     st.image('https://i.gifer.com/ZWnN.gif')
