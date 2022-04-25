@@ -1,6 +1,6 @@
 # Gourmaid
 카카오 API를 통해 수집한 데이터에 기반한 맛집 검색 서비스   
-카카오 장소 검색을 맛집에 최적화하여 웹상에서 구현하여 사용자 편의성 제공
+카카오 장소 검색을 맛집에 최적화시키고 웹상에서 구현하여 사용자 편의성 제공
 
 <br>
 
@@ -23,7 +23,7 @@
 
 ## 1. How to Use
 - `streamlit run app.py --server.port 8080` 명령어를 입력하여 실행
-- `streamlit` 라이브러리를 통해 로컬 서버에서 웹이 구현되었기에 외부에서 접속 불가
+- `streamlit` 라이브러리를 통해 로컬 서버에서 웹이 구현되었기에 외부에서 접근은 불가
 - 데이터 수집을 위해 카카오 REST API 및 네이버 CLOVA API를 사용하였으며,   
   지도 표시를 위해 카카오 JavaScript API를 추가로 사용
 - API 키는 과금 우려로 제외하였으며, 실행 시 해당 부분에 본인 API 키 입력
@@ -127,6 +127,16 @@ service_data.json = {
     },
     "errors": {}
 }    
+```
+
+### API Keys
+
+```python
+service_keys = {
+    'kakao_rest': '...',
+    'kakao_js': '...',
+    'naver_clova': ('X-NCP-APIGW-API-KEY-ID','X-NCP-APIGW-API-KEY')
+}
 ```
 
 ---
