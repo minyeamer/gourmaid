@@ -122,8 +122,9 @@ def load_summary_div(session: st.AutoSessionState):
     lmargin, sentiment_gauge, rmargin = st.columns([2,6,2])
     with sentiment_gauge:
         total_review = session.data['리뷰 수'][session['page']]
+        total_review = total_review if total_review else 1
         negative_review = session.data['부정 리뷰 수'][session['page']]
-        st.progress(int((total_review-negative_review)/(total_review+1)*100))
+        st.progress(int((total_review-negative_review)/(total_review)*100))
 
 
 def load_list_div(session: st.AutoSessionState, name: str):
@@ -223,16 +224,20 @@ def main():
     service_keys = get_service_keys()
 
     # 프로젝트 시간 제약에 의해 서비스 지역을 서울시 강남구 삼성동으로 한정
-    local_info = {'si': '서울특별시', 'gu': '강남구', 'dong': '삼성동', 'address': '서울 강남구 삼성동'}
+    # local_info = {'si': '서울특별시', 'gu': '강남구', 'dong': '삼성동', 'address': ['서울 강남구 삼성동']}
 
-    admin = KakaoAdmin('minyeamer','abcd@likelion.org',service_keys,local_info)
+    # 개인적인 목적으로 광명동 맛집을 탐색하기 위해 설정, 향후 서비스 확대 시 서울 외 지역 간 호환을 위해 파라미터 재조정 필요
+    gm_local_info = {'si': '경기도', 'gu': '광명시', 'dong': '',
+                     'address': ['경기 광명시 광명동']}
+
+    admin = KakaoAdmin('minyeamer','abcd@likelion.org',service_keys,gm_local_info)
 
     try:
         # 스크래핑이 필요한 경우 (디버그 시 size 파라미터를 사용해 요청할 데이터 수 제한)
         # admin.set_service_data()
 
         # 스크래핑한 데이터가 있을 경우
-        with open('data/service_data.json','r', encoding='UTF-8') as f:
+        with open('data/gm_service_data.json','r', encoding='UTF-8') as f:
             service_data = json.load(f)
         # 데이터프레임을 직접 가져올 경우 리스트가 하나의 문자열로 합쳐지는 문제 발생
         # service_df = pd.read_csv('data/service_data.csv')
