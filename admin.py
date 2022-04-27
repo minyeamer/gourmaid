@@ -27,7 +27,7 @@ class KakaoAdmin(Admin):
         service_urls['kakao_map'] = 'https://dapi.kakao.com/v2/maps/sdk.js'
         service_urls['naver_clova'] = 'https://naveropenapi.apigw.ntruss.com/sentiment-analysis/v1/analyze'
         self.service_info = {'urls': service_urls, 'keys': service_keys}
-        self.local_info = local_info if local_info else {'si': '', 'gu': '', 'dong': '', 'name': ''}
+        self.local_info = local_info if local_info else {'si': '', 'gu': '', 'dong': '', 'name': ['']}
 
 
     def set_service_data(self, service_data=dict(), service_df=pd.DataFrame(), size=0):
@@ -42,7 +42,7 @@ class KakaoAdmin(Admin):
         if not service_data:
             self.service_data.request_data(self.service_info, self.local_info, size=size)
         elif not len(service_df):
-            service_df = self.service_data.dict_to_df(service_data['places'])
+            service_df = self.service_data.dict_to_df(service_data['places'], self.local_info)
             self.service_data.update_dataframe(service_df)
 
 

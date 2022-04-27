@@ -78,7 +78,7 @@ class KakaoPlaceData(PlaceData):
                     continue
 
                 try:
-                    if place['address_name'].__contains__(local_info['address']):
+                    if place['address_name'].__contains__(local_info['address'][0]):
                         if place['category_group_name'] == '음식점':
                             place.update(self.request_details(driver, place['place_url']))
                             place.update(self.get_token_dict(
@@ -91,7 +91,7 @@ class KakaoPlaceData(PlaceData):
 
         driver.close()
         self.update_data(place_dict)
-        self.update_dataframe(self.dict_to_df(place_dict['places']))
+        self.update_dataframe(self.dict_to_df(place_dict['places'], local_info))
 
 
     def make_place_list(self, local_info: dict) -> list:
@@ -398,7 +398,7 @@ class KakaoPlaceData(PlaceData):
     # =================================================================================
 
 
-    def dict_to_df(self, data: dict) -> pd.DataFrame:
+    def dict_to_df(self, data: dict, local_info: dict()) -> pd.DataFrame:
         """
         딕셔너리 형태의 스크래핑 결과를 데이터프레임으로 변환하는 메소드
         """
@@ -408,6 +408,13 @@ class KakaoPlaceData(PlaceData):
 
         df = pd.DataFrame(data).T
         df.drop(['category_group_code','category_group_name','distance','id'], axis=1, inplace=True)
+
+        # 개인적인 목적으로 광명동 맛집을 탐색하기 위해 설정, 향후 서비스 확대 시 해당 부분 재조정 필요
+        if local_info['address'][0]:
+            match_df =  df['address_name'].isnull()
+            for local in local_info['address']:
+                match_df |= df['address_name'].str.contains(local)
+            df = df[df['address_name'].str.contains(local)]
 
         kr_dict = dict()
         kr_dict['place_name'] = '식당명'
