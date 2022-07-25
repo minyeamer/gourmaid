@@ -1,26 +1,31 @@
 # Gourmaid
-카카오 API를 통해 수집한 데이터에 기반한 맛집 검색 서비스   
-카카오 장소 검색을 맛집에 최적화시키고 웹상에서 구현하여 사용자 편의성 제공
+  1. [Introduction](#1-introduction)
+  2. [How to Use](#2-how-to-use)
+  3. [Project Description](#3-project-description)
+  4. [Implementation](#4-implementation)
+  5. [Main Classes](#5-main-classes)
+  6. [Main Methods](#6-main-methods)
+  7. [Input/Output](#7-inputoutput)
+  8. [Error List](#8-error-list)
+  9. [Post-Project](#9-post-project)
+
+---
+
+## 1. Introduction
+- 카카오 지도 검색은 간단한 맛집 탐색에 활용되지만, 단순히 가게 이름만을 활용한 검색 기능을 발전시켜   
+메뉴와 리뷰 데이터를 검색 대상으로 포함할 수 있다면 더욱 나은 서비스로 발전할 수 있을 것이라 기대
+- 카카오 API를 통해 수집한 맛집 데이터를 활용해 규칙 기반 검색 기능을 구현하고,   
+카카오 지도 검색과 유사한 결과 페이지를 로컬 브라우저 상에 구현
+- 추가적으로 코사인 유사도를 활용해 검색 결과와 유사한 순서대로 모든 맛집을 표시하고,   
+페이지네이션을 통해 각각의 맛집을 구분
+- 특정 사용자를 대상으로한 맞춤 검색 서비스는 더 나은 편의성을 제공할 것
 
 <br>
 
 ![search](https://img1.daumcdn.net/thumb/R1280x0/?scode=mtistory2&fname=https%3A%2F%2Fblog.kakaocdn.net%2Fdn%2FervPbb%2FbtrAoIyhMP8%2F67srfrMMdRX20fyzQi89O0%2Fimg.webp)
 
----
 
-## Index
-  1. [How to Use](#1-how-to-use)
-  2. [Project Description](#2-project-description)
-  3. [Implementation](#3-implementation)
-  4. [Main Classes](#4-main-classes)
-  5. [Main Methods](#5-main-methods)
-  6. [Input/Output](#6-inputoutput)
-  7. [Error List](#7-error-list)
-  8. [Restropective](#8-restropective)
-
----
-
-## 1. How to Use
+## 2. How to Use
 - `streamlit run app.py --server.port 8080` 명령어를 입력하여 실행
 - `streamlit` 라이브러리를 통해 로컬 서버에서 웹이 구현되었기에 외부에서 접근은 불가
 - 데이터 수집을 위해 카카오 REST API 및 네이버 CLOVA API를 사용하였으며,   
@@ -30,7 +35,7 @@
 
 ---
 
-## 2. Project Description
+## 3. Project Description
 
 ### Team Name
 > 머신일이고 (What The Machine)
@@ -48,7 +53,7 @@
 
 ---
 
-## 3. Implementation
+## 4. Implementation
 
 ### Languages:
 - Python 3.9.10
@@ -70,13 +75,13 @@
 
 ---
 
-## 4. Main Classes
+## 5. Main Classes
 - `KakaoAdmin(Admin)`: 카카오 데이터를 기반으로 웹 서비스를 제공하는 관리자 객체
 - `KakaoPlaceData(PlaceData)`: 카카오 데이터를 요청하고 처리하는 데이터 객체
 
 ---
 
-## 5. Main Methods
+## 6. Main Methods
 - `request`로 시작하는 메소드는 주로 API 또는 웹을 통해 데이터를 수집하거나,   
   전체적인 스크래핑 프로세스를 지휘하는 역할
 - `get`으로 시작하는 메소드는 가져온 데이터를 가공하는 역할
@@ -92,7 +97,7 @@
 
 ---
 
-## 6. Service Data
+## 7. Service Data
 
 ```python
 service_data.json = {
@@ -140,7 +145,7 @@ service_keys = {
 
 ---
 
-## 7. Error List
+## 8. Error List
 
 ### 404 Forbidden
 - 카카오 플레이스 페이지에 지속적인 요청을 하다보니 접속이 차단되는 경우가 발생
@@ -151,7 +156,7 @@ service_keys = {
 
 ---
 
-## 8. Restropective
+## 9. Post-Project
 - 키워드도 토큰화를 진행하여 의미있는 문장인지, 아니면 단순한 단어들의 집합인지 구분하여   
   사용자의 의도에 맞는 결과를 보여주었으면 좋겠지만 시간 부족으로 구현하지 못한 점이 아쉬움
 - 사용자의 GPS 상 위치를 파악하여 가까운 맛집 순으로 보여주면 좋겠지만,   
